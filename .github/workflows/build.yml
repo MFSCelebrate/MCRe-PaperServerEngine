@@ -1,0 +1,74 @@
+name: Build Project
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: 'zulu'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 给 gradlew 加执行权限
+        run: chmod +x ./gradlew
+
+      - name: Build
+        run: ./gradlew build -x test --stacktrace
+
+      # ================================================
+      # 第一份 Artifact：打包全部文件（排除 build/libs）
+      # ================================================
+      - name: Package entire repository (excluding build/libs)
+        run: |
+          mkdir -p artifacts-all
+          # 使用 rsync 风格：把整个项目复制到 artifacts-all，但排除 build/libs 目录
+          # 这里用 find + cp 模拟，但更简单的是用 tar 配合 --exclude
+          tar -czf artifacts-all/all-repo.tar.gz \
+            --exclude='build/libs' \
+            --exclude='artifacts-all' \
+            --exclude='.git' \
+            --exclude='.gradle' \
+            .
+          # 或者如果你想保留目录结构直接用 zip，可以用：
+          # zip -r artifacts-all/all-repo.zip . -x "build/libs/*" "artifacts-all/*" ".git/*" ".gradle/*"
+          # 但为了大小和兼容性，我建议用 tar.gz
+
+      - name: Upload full repository (without build/libs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-repo-without-libs
+          path: artifacts-all/all-repo.tar.gz
+
+      # ================================================
+      # 第二份 Artifact：打包构建产物（build/libs 下的所有 jar）
+      # ================================================
+      - name: Collect JARs from build/libs
+        run: |
+          mkdir -p artifacts-jars
+          # 只收集 build/libs 目录下的 .jar 文件，保留相对路径
+          find . -path "*/build/libs/*.jar" -type f -exec sh -c 'mkdir -p artifacts-jars/$(dirname {}) && cp {} artifacts-jars/{}' \;
+          echo "=== 收集到的 JAR 文件 ==="
+          find artifacts-jars -name "*.jar" -type f | sort
+
+      - name: Package JARs into ZIP
+        run: |
+          cd artifacts-jars
+          zip -r ../build-jars.zip .
+          cd ..
+
+      - name: Upload build JARs
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-jars
+          path: build-jars.zip
