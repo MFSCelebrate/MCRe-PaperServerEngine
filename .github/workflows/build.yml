@@ -33,20 +33,25 @@ jobs:
         run: ./gradlew build --stacktrace
 
       # ================================================
-      # 打包整个构建好的项目（包含所有缓存和构建产物）
+      # 停止 Gradle 守护进程，避免后台写文件干扰打包
       # ================================================
-      - name: Package entire build project (with caches)
+      - name: Stop Gradle Daemon
+        run: ./gradlew --stop
+
+      # ================================================
+      # 打包整个项目（包含所有缓存和构建产物）
+      # 使用 zip（对文件变化容忍度高）排除 git 等无关目录
+      # ================================================
+      - name: Package entire build project
         run: |
-          tar -czf full-build-project.tar.gz \
-            --exclude='.git' \
-            --exclude='full-build-project.tar.gz' \
-            --exclude='.github' \
-            --exclude='.gitignore' \
-            .
-          # 若需要更小体积，可排除 .gradle 目录，但根据要求保留缓存，故不排除
+          zip -r full-build-project.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x ".gitignore" \
+            -x "full-build-project.zip"
 
       - name: Upload full build project
         uses: actions/upload-artifact@v4
         with:
           name: full-build-project
-          path: full-build-project.tar.gz
+          path: full-build-project.zip
